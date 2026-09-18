@@ -1,0 +1,38 @@
+{
+  "climate": "Chicago-OHare_TMY3_ASHRAE-CZ5A-cold",
+  "weather_file": "USA_IL_Chicago-OHare.Intl.AP.725300_TMY3.epw",
+  "buildings": [
+    {
+      "building_id": "sys08_vav_parallel_piu",
+      "n_nodes": 25,
+      "n_feeds_edges": 21,
+      "node_type_counts": {
+        "AHU": 1,
+        "Cooling_Coil": 1,
+        "Heating_Coil": 1,
+        "Fan": 1,
+        "VAV": 10,
+        "HVAC_Zone": 10,
+        "Pump": 1
+      },
+      "n_blueprints": 5,
+      "n_trials": 315
+    },
+    {
+      "building_id": "sys07_vav_reheat",
+      "n_nodes": 36,
+      "n_feeds_edges": 32,
+      "node_type_counts": {
+        "AHU": 1,
+        "Cooling_Coil": 1,
+        "Heating_Coil": 11,
+        "Fan": 1,
+        "VAV": 10,
+        "HVAC_Zone": 10,
+        "Pump": 2
+      },
+      "n_blueprints": 6,
+      "n_trials": 378
+    }
+  ]
+}
