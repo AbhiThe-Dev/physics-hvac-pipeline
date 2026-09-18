@@ -111,7 +111,7 @@ def simulate(building_id, severities, n_seeds, base_seed=91300001, verbose=False
 
 
 if __name__ == "__main__":
-    for bid in ["sys07_vav_reheat", "sys08_vav_parallel_piu"]:
+    for bid in ["sys07_vav_reheat", "sys08_vav_parallel_piu", "sys05_vav_reheat_dx", "sys06_vav_piu_dx"]:
         print(f"=== {bid} ===")
         results = simulate(bid, severities=range(1, 11), n_seeds=200, verbose=False)
         for sev, (nbp, ncoll, nev, ncoil) in results.items():

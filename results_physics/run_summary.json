@@ -33,6 +33,37 @@
       },
       "n_blueprints": 6,
       "n_trials": 378
+    },
+    {
+      "building_id": "sys05_vav_reheat_dx",
+      "n_nodes": 35,
+      "n_feeds_edges": 31,
+      "node_type_counts": {
+        "AHU": 1,
+        "Cooling_Coil": 1,
+        "Heating_Coil": 11,
+        "Fan": 1,
+        "VAV": 10,
+        "HVAC_Zone": 10,
+        "Pump": 1
+      },
+      "n_blueprints": 6,
+      "n_trials": 378
+    },
+    {
+      "building_id": "sys06_vav_piu_dx",
+      "n_nodes": 24,
+      "n_feeds_edges": 20,
+      "node_type_counts": {
+        "AHU": 1,
+        "Cooling_Coil": 1,
+        "Heating_Coil": 1,
+        "Fan": 1,
+        "VAV": 10,
+        "HVAC_Zone": 10
+      },
+      "n_blueprints": 5,
+      "n_trials": 315
     }
   ]
 }

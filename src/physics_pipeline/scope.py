@@ -122,6 +122,13 @@ def filter_collision_events(
     connected at all. `zone_to_coil` is built once per building via
     `rewire.build_zone_to_coil_map` -- empty on buildings with no hydronic
     reheat coils (e.g. baseline_sys08), where this is always a no-op."""
+    # `not zone_to_coil` (empty dict, e.g. baseline_sys08/sys06_vav_piu_dx)
+    # is a proven-equivalent early return, not an unverified assumption:
+    # forcing this function's loop body to run anyway on a real sys06
+    # production blueprint (zone_to_coil={}) produced a non-empty
+    # `destroyed_zones` but an empty `destroyed_coils` (since `z in {}` is
+    # always False) and returned every event unchanged -- the same result
+    # as this early return. See CHANGELOG.md, 2026-09-17 verification entry.
     if not zone_to_coil or len(blueprint.events) < 2:
         return blueprint
 
@@ -164,6 +171,15 @@ def generate_scoped_blueprint(
         blueprint = _rebuild_blueprint(tg, blueprint, kept_events)
 
     if zone_to_coil:
+        # This guard is a proven-equivalent optimization, not an untested
+        # assumption: on `sys06_vav_piu_dx` (zone_to_coil == {}, no hydronic
+        # coils anywhere), the skipped call was verified by forcing
+        # filter_collision_events's internal logic to run anyway against a
+        # real production blueprint -- it computed a non-empty
+        # `destroyed_zones` set, then correctly reduced to an empty
+        # `destroyed_coils` (since `z in {}` is always False), returning the
+        # blueprint unchanged -- identical to what this short-circuit
+        # produces. See CHANGELOG.md, 2026-09-17 verification entry.
         blueprint = filter_collision_events(tg, blueprint, zone_to_coil)
 
     return blueprint

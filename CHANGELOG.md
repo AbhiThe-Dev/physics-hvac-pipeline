@@ -1,5 +1,91 @@
 # Changelog
 
+## 2026-09-17 — Verification: sys06's zero-collision-risk result is proven, not just unobserved
+
+Follow-up to the widening round below, prompted by the question of whether "same object classes, no code changes needed" (true for sys05/sys06) also means "identical behavior verified," which the DX-coil finding already showed it doesn't. Confirmed by forcing `scope.filter_collision_events`'s logic to run anyway on a real `sys06_vav_piu_dx` production blueprint (bypassing its own early return and its caller's `if zone_to_coil:` guard) that the empty-map short-circuit is a proven-equivalent optimization, not an untested assumption; and confirmed, via two independent guarantees (`_event_in_scope`'s Pump-only source-type check plus sys06 having zero Pump-type nodes), that `pipeline._handle_coil_event`/`reassign_coil`/`remove_coil_service` are structurally unreachable for sys06, not merely unexercised by this batch's seeds. No code behavior changed; see `results_physics/results.md` (new paragraph next to the sys05 DX-coil caveat) and the two guard sites in `scope.py`, now commented with this proof.
+
+## 2026-09-17 — Batch widened to 4 buildings: sys05 + sys06, DX-coil scope-gap fix
+
+Widened the validation batch from 2 buildings (`sys07_vav_reheat`,
+`sys08_vav_parallel_piu`) to 4, adding `sys05_vav_reheat_dx` (hydronic
+VAV-reheat, single hot-water plant/pump, DX cooling) and
+`sys06_vav_piu_dx` (electric PIU-reheat, zero plant loops, fully
+DX/electric) -- genuinely new plant/coil topologies (single-medium and
+zero-plant-loop), not just more seeds on the same two buildings. Full
+detail in `results_physics/results.md`; summary below.
+
+**Scope decision, confirmed with the user before running anything:** of
+the 10 ASHRAE 90.1 baseline system archetypes vendored, `sys05`/`sys06`
+were chosen because they reuse the exact `AirLoopHVAC`/VAV-terminal/
+`PlantLoop`-pump object classes `extract.py`/`rewire.py` already handle,
+needing no extraction-code changes. `sys01`/`sys02` (PTAC/PTHP, no
+`AirLoopHVAC` at all) and `sys03`/`sys04`/`sys09`/`sys10` (single-zone,
+`AirTerminal:SingleDuct:Uncontrolled` terminals) were explicitly scoped
+out as a separate future round -- see "Open items" below.
+
+**A real bug found by widening, not by hypothesizing:** `sys05`'s cooling
+coil is DX (`Coil:Cooling:DX:TwoSpeed`), not hydronic. `generate_blueprint`
+still draws pump<->coil fabrication events targeting it (Brick doesn't
+distinguish DX from hydronic coils), but this pipeline's coil rewiring
+only ever understood `Coil:Cooling:Water`/`Coil:Heating:Water`. The
+existing failure message for an unresolvable coil assumed the *only*
+possible cause -- true on `sys07`/`sys08`, where every coil is hydronic --
+was cross-event collision (an earlier event in the same blueprint
+destroying the coil). On `sys05` that assumption is false: the DX coil is
+never destroyed, it's simply never resolvable as hydronic. Fixed in
+`pipeline.py` (`_unresolved_coil_reason`) to check whether the raw object
+resolves at all before checking whether it resolves as hydronic, so the
+two causes are reported distinctly. This is a permanent, recurring scope
+gap for any building with a non-hydronic coil target (confirmed to recur
+roughly every 10-20 seeds in a wider sweep), not a transient collision --
+it just didn't happen to be drawn by this batch's own 6 seeds per
+building, so it shows up as `n_failed=0` in this run's table with the gap
+documented in prose rather than as a nonzero count.
+
+**Collision-risk generalization confirmed empirically, not assumed:**
+extended the existing 200-seed-per-severity Monte Carlo study to all 4
+buildings. `sys05` (hydronic zone-embedded coils, one medium) shows the
+same systematic, growing collision rate as `sys07` (0% -> 6% -> 69% at
+severities 1/3/10, vs. `sys07`'s 0% -> 15% -> 92%); `sys06` (electric
+reheat, nothing to cascade-delete) is flat 0%, matching `sys08`. The
+existing structural fix needed zero code changes to generalize.
+
+**Cross-medium risk: a clean confirming contrast.** `sys05` has only one
+pump/medium (hot-water; cooling is DX), so the cross-medium
+misattribution failure mode found on `sys07` is structurally impossible
+there -- correctly absent, not silently missed.
+
+**Widened totals:** 48-event denominator (up from 24), 40/48 (83%) in
+scope (up from 18/24, 75%), all 8 exclusions still `target is VAV` (no
+new out-of-scope category). 39 in-scope events attempted: 37 clean, 2
+functionally dead (both pre-existing, on `sys07`), 0 failed to rewire in
+this specific batch. 1386 total troubleshooting trials = 693 (both
+original buildings, rerun bit-for-bit identical) + 693 (the two new
+buildings). `n_clean + n_dead + n_failed == n_attempted` re-verified on
+the full widened batch (37 + 2 + 0 == 39), asserted in code now
+(`build_report.py`), not just eyeballed.
+
+**Docs updated:** `results_physics/results.md` (full rewrite reflecting
+the widened batch, not just re-run with the old prose), `README.md`
+("Key findings" section extended, buildings/scope counts updated).
+
+### Open items for a future round
+
+- `sys01`/`sys02` (zone-level PTAC/PTHP, no `AirLoopHVAC`) and
+  `sys03`/`sys04`/`sys09`/`sys10` (single-zone, non-VAV `Uncontrolled`
+  terminals) need real `extract.py` changes before they can be added --
+  not a drop-in extension like sys05/sys06 was.
+- `_run_coil_fault` still exists but is unused -- coil-level fault
+  injection still needs real investigation before it can be wired in
+  (unchanged from the prior round).
+- Collision risk is well-quantified on all 4 buildings but severity is
+  still capped at 3 in the confirmed batch; revisit before pushing
+  severity higher.
+- Real DOE prototype buildings still deferred (license question,
+  unresolved).
+- Noise-rate calibration from physics: not started, deliberately out of
+  scope so far.
+
 ## 2026-09-17 — Pump/coil audit round: functional-effect check, collision fix, coil-fault correction
 
 Three fixes applied following the pump/coil corruption-type work, plus a

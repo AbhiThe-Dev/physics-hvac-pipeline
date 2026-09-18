@@ -55,6 +55,24 @@ BASE_BUILDINGS: tuple[BaseBuilding, ...] = (
         "(hot-water reheat coils) -> 10 zones; separate chilled-water and hot-water plants "
         "(chiller + condenser loop, boiler)",
     ),
+    BaseBuilding(
+        building_id="sys05_vav_reheat_dx",
+        osm_path=RESOURCES_DIR / "baseline_sys05.osm",
+        description="10-zone, 2-story ASHRAE 90.1 Appendix G baseline test building "
+        "(NREL/OpenStudio-resources, BSD-3-Clause)",
+        hvac_summary="1 AHU (VAV fan, DX cooling coil) -> 10 VAV-Reheat terminals (hot-water reheat "
+        "coils) -> 10 zones; a single hot-water plant (1 pump/boiler) -- the cooling coil is DX, "
+        "not on any plant loop, so this building has only ONE medium/pump, unlike sys07's two",
+    ),
+    BaseBuilding(
+        building_id="sys06_vav_piu_dx",
+        osm_path=RESOURCES_DIR / "baseline_sys06.osm",
+        description="10-zone, 2-story ASHRAE 90.1 Appendix G baseline test building "
+        "(NREL/OpenStudio-resources, BSD-3-Clause)",
+        hvac_summary="1 AHU (VAV fan, DX cooling coil, electric heating coil) -> 10 Parallel-PIU-Reheat "
+        "VAV terminals (electric reheat) -> 10 zones; NO plant loop and NO pump anywhere in the "
+        "building -- fully DX/electric",
+    ),
 )
 
 

@@ -141,6 +141,39 @@ def _resolve_coil(model, node_id: str):
     return None
 
 
+def _unresolved_coil_reason(model, node_id: str) -> str:
+    """Distinguishes two different reasons `_resolve_coil` can return None,
+    conflated by an earlier version of this function: the object may be
+    truly gone (destroyed as a side effect of an earlier event in the same
+    blueprint applied to this same scratch model -- the cross-event
+    collision case this pipeline structurally filters for zone-targeting
+    events, but pump/coil-targeting events aren't run through that filter),
+    or it may still exist but not be a hydronic coil at all -- this
+    pipeline's pump/coil rewiring (`rewire.reassign_coil`/
+    `remove_coil_service`) only understands Coil:Cooling:Water and
+    Coil:Heating:Water; a DX coil (found once this pipeline was extended to
+    `sys05`, whose cooling coil is `Coil:Cooling:DX:TwoSpeed`) resolves to a
+    real object but never to either water-coil accessor, which is a
+    structural scope gap, not a collision, and must not be reported as one."""
+    obj = _resolve(model, node_id)
+    if obj is None:
+        return (
+            f"could not resolve coil {node_id!r} -- this node was resolvable when generate_blueprint "
+            "drew this event, so it was most likely destroyed as a side effect of physically applying "
+            "an EARLIER event in this same blueprint to this same scratch model (e.g. a reheat coil "
+            "deleted along with the terminal it belonged to, when a fabrication/misattribution event "
+            "on a different, unrelated zone happened to pick that terminal's zone as its target); not "
+            "a bug in this event's own rewire"
+        )
+    idd_type = obj.iddObjectType().valueName()
+    return (
+        f"coil {node_id!r} exists ({idd_type}) but is not a hydronic coil -- this pipeline's "
+        "pump/coil rewiring only supports Coil:Cooling:Water and Coil:Heating:Water; a DX or other "
+        "non-hydronic coil has no plant-loop connection to reassign or remove, which is a structural "
+        "scope gap for this building's coil type, not a rewire failure"
+    )
+
+
 def _handle_coil_event(model, tg, event) -> tuple[bool, str]:
     """Pump<->coil dispatch, mirroring the zone dispatch below: removal
     fully deletes the coil (the only way to represent "no pump feeds this
@@ -149,19 +182,11 @@ def _handle_coil_event(model, tg, event) -> tuple[bool, str]:
     misattribution are the same physical operation (move the coil's plant
     connection), since a coil's water side can only be on one plant loop at
     a time."""
-    stale_note = (
-        " -- this node was resolvable when generate_blueprint drew this event, so it was most "
-        "likely destroyed as a side effect of physically applying an EARLIER event in this same "
-        "blueprint to this same scratch model (e.g. a reheat coil deleted along with the terminal "
-        "it belonged to, when a fabrication/misattribution event on a different, unrelated zone "
-        "happened to pick that terminal's zone as its target); not a bug in this event's own rewire"
-    )
-
     if event.corruption_type == "removal":
         s, t = event.discordant_pairs[0]
         coil = _resolve_coil(model, t)
         if coil is None:
-            return False, f"could not resolve coil {t!r} for removal{stale_note}"
+            return False, _unresolved_coil_reason(model, t)
         ok = rewire_mod.remove_coil_service(model, coil)
         return ok, "fully removed the coil (no pump feeds it, blueprint claims no connection)"
 
@@ -173,8 +198,12 @@ def _handle_coil_event(model, tg, event) -> tuple[bool, str]:
     pump = _resolve_pump(model, s)
     coil = _resolve_coil(model, t)
     if pump is None or coil is None:
-        missing = ("pump" if pump is None else "") + ("+coil" if pump is None and coil is None else "coil" if coil is None else "")
-        return False, f"could not resolve {missing} ({s!r}, {t!r}){stale_note}"
+        if coil is None:
+            return False, _unresolved_coil_reason(model, t)
+        return False, f"could not resolve pump {s!r} -- this node was resolvable when generate_blueprint " \
+                      "drew this event, so it was most likely destroyed as a side effect of physically " \
+                      "applying an EARLIER event in this same blueprint to this same scratch model; not a " \
+                      "bug in this event's own rewire"
     ok = rewire_mod.reassign_coil(model, coil, pump)
     verb = "fabricated" if event.corruption_type == "fabrication" else "misattributed"
     if ok:
