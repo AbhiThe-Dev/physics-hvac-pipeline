@@ -69,6 +69,25 @@ def _zone_location(zone: "openstudio.model.ThermalZone") -> str | None:
     return story.get().name().get() if story.is_initialized() else None
 
 
+# ZoneHVAC "packaged terminal" unit types this extraction recognizes -- no
+# AirLoopHVAC at all, the whole air-side package (fan + coils) sits directly
+# on the zone. Confirmed via direct model inspection (not assumed from the
+# system name) that PTAC (baseline_sys01) and PTHP (baseline_sys02) are
+# materially different cases, not two instances of the same thing: EVERY
+# PTAC unit's heating coil is Coil:Heating:Water on a real, shared hot-water
+# PlantLoop with an actual pump (so pump<->coil corruption is meaningful
+# here, the same as a VAV-reheat building), while EVERY PTHP unit is fully
+# Coil:Heating:DX:SingleSpeed/Coil:Cooling:DX:SingleSpeed with zero
+# PlantLoops and zero pumps in the whole model (no pump<->coil edge is even
+# possible here, structurally, the same way sys06 has none -- but confirmed
+# independently for this different object type, not inherited from sys06's
+# proof).
+_PACKAGED_ZONE_HVAC_GETTERS: tuple[str, ...] = (
+    "getZoneHVACPackagedTerminalAirConditioners",
+    "getZoneHVACPackagedTerminalHeatPumps",
+)
+
+
 class TopologyExtraction:
     """Extraction result plus the raw geometry facts used to derive
     `location`, kept alongside the `TopologyGraph` for reporting/inspection
@@ -104,6 +123,19 @@ def extract_topology(model: "openstudio.model.Model", building_id: str, config_t
         nx_graph.add_edge(s, t, relation=relation)
         edges_by_relation[relation].add((s, t))
 
+    def add_zone_node(zone: "openstudio.model.ThermalZone") -> str:
+        story = _zone_location(zone)
+        space = zone.spaces()[0] if zone.spaces() else None
+        return add_node(
+            zone,
+            "HVAC_Zone",
+            location=story,
+            floor_area_m2=round(space.floorArea(), 1) if space else None,
+            x_origin=space.xOrigin() if space else None,
+            y_origin=space.yOrigin() if space else None,
+            building_story=story,
+        )
+
     # --- air loops: AHU -> [Terminal_Unit] -> Zone, AHU hasPart coils/fans ---
     for airloop in model.getAirLoopHVACs():
         ahu_id = add_node(airloop, "AHU")
@@ -127,21 +159,44 @@ def extract_topology(model: "openstudio.model.Model", building_id: str, config_t
                     j += 1
                 if j < len(demand):
                     zone = demand[j].to_ThermalZone().get()
-                    story = _zone_location(zone)
-                    space = zone.spaces()[0] if zone.spaces() else None
-                    zone_id = add_node(
-                        zone,
-                        "HVAC_Zone",
-                        location=story,
-                        floor_area_m2=round(space.floorArea(), 1) if space else None,
-                        x_origin=space.xOrigin() if space else None,
-                        y_origin=space.yOrigin() if space else None,
-                        building_story=story,
-                    )
+                    zone_id = add_zone_node(zone)
                     add_edge(term_id, zone_id, "feeds")
                     # the terminal physically sits with the zone it serves
-                    nx_graph.nodes[term_id]["location"] = story
+                    nx_graph.nodes[term_id]["location"] = nx_graph.nodes[zone_id]["location"]
+                # A VAV:Reheat terminal owns its reheat coil. Emitted as
+                # `coil -hasPart-> terminal` (part -> whole), the same
+                # direction already used for AHU coils/fans -> AHU and
+                # PTAC/PTHP coils -> unit above. Scoped to
+                # AirTerminal:SingleDuct:VAV:Reheat only; without this edge
+                # the coil's only relation is `pump -feeds-> coil`, so
+                # sibling coils under one pump are structurally identical.
+                if t == "OS_AirTerminal_SingleDuct_VAV_Reheat":
+                    reheat = c.to_AirTerminalSingleDuctVAVReheat().get().reheatCoil()
+                    coil_id = add_node(reheat, _brick_equipment_type(reheat.iddObjectType().valueName()))
+                    add_edge(coil_id, term_id, "hasPart")
             i += 1
+
+    # --- zone-level packaged terminal units (PTAC/PTHP): no AirLoopHVAC at
+    # all, so this is a separate walk, not a special case of the one above.
+    # Each unit is its own self-contained Terminal_Unit -> Zone feeds edge,
+    # with its own embedded coils/fan as hasPart -- structurally the same
+    # role a VAV terminal plays, just never routed through a central AHU.
+    for getter_name in _PACKAGED_ZONE_HVAC_GETTERS:
+        for unit in getattr(model, getter_name)():
+            if not unit.thermalZone().is_initialized():
+                continue
+            zone = unit.thermalZone().get()
+            zone_id = add_zone_node(zone)
+            unit_id = add_node(unit, "Terminal_Unit", location=nx_graph.nodes[zone_id]["location"])
+            add_edge(unit_id, zone_id, "feeds")
+
+            cooling_coil = unit.coolingCoil()
+            heating_coil = unit.heatingCoil()
+            fan = unit.supplyAirFan()
+            for component in (cooling_coil, heating_coil, fan):
+                t = component.iddObjectType().valueName()
+                part_id = add_node(component, _brick_equipment_type(t))
+                add_edge(part_id, unit_id, "hasPart")
 
     # --- plant loops: Pump -> Coil, restricted to tiers candidates.py covers ---
     for plant in model.getPlantLoops():

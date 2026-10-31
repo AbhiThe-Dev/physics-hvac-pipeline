@@ -141,6 +141,24 @@ def _resolve_coil(model, node_id: str):
     return None
 
 
+def _resolve_airloop(model, node_id: str):
+    """Resolves an AHU-typed node to its `AirLoopHVAC` object, or None if
+    it no longer exists -- found necessary on sys03/04/09/10 (one dedicated
+    AirLoopHVAC per zone, never true on sys05-08's single shared AHU): an
+    earlier event in the same blueprint can now fully delete a WHOLE
+    airloop as a side effect (`rewire._delete_airloop_if_now_zoneless`,
+    triggered when a zone-service rewire empties that airloop's last
+    zone), which a *different*, independently-drawn event in the same
+    blueprint can still reference as its AHU-direct source -- the same
+    cross-event collision shape as the zone->coil case, just for a node
+    type the graph never represented as destructible before now."""
+    obj = _resolve(model, node_id)
+    if obj is None:
+        return None
+    opt = obj.to_AirLoopHVAC()
+    return opt.get() if opt.is_initialized() else None
+
+
 def _unresolved_coil_reason(model, node_id: str) -> str:
     """Distinguishes two different reasons `_resolve_coil` can return None,
     conflated by an earlier version of this function: the object may be
@@ -390,11 +408,18 @@ def check_blueprint_physical_plausibility(
             s, t = event.discordant_pairs[0]
             source_type = tg.node_type(s)
             if source_type == "AHU":
-                ahu_airloop = _resolve(model, s).to_AirLoopHVAC().get()
-                ok = rewire_mod.set_ahu_direct_service(model, ahu_airloop, target_zone)
-                reason = "constructed an AHU-direct pass-through terminal so the AHU serves the claimed " \
-                         "zone directly" if ok else "attempted to construct an AHU-direct connection to " \
-                         "the claimed zone, but the rewire call itself failed"
+                ahu_airloop = _resolve_airloop(model, s)
+                if ahu_airloop is None:
+                    reason = f"could not resolve AHU {s!r} -- this node was resolvable when generate_blueprint " \
+                             "drew this event, so it was most likely destroyed as a side effect of physically " \
+                             "applying an EARLIER event in this same blueprint to this same scratch model (a " \
+                             "zone-service rewire that emptied this AHU's last zone deletes the whole airloop, " \
+                             "on single-zone-per-airloop buildings); not a bug in this event's own rewire"
+                else:
+                    ok = rewire_mod.set_ahu_direct_service(model, ahu_airloop, target_zone)
+                    reason = "constructed an AHU-direct pass-through terminal so the AHU serves the claimed " \
+                             "zone directly" if ok else "attempted to construct an AHU-direct connection to " \
+                             "the claimed zone, but the rewire call itself failed"
             elif source_type not in ("VAV", "Terminal_Unit"):
                 reason = (f"fabricated source is {source_type!r} -- out of scope for the terminal<->zone "
                           f"and AHU<->zone rewiring this pipeline implements (e.g. a pump/coil edge)")
@@ -412,11 +437,18 @@ def check_blueprint_physical_plausibility(
             (_s_true, t_true), (s_wrong, _t_wrong) = event.discordant_pairs
             source_type = tg.node_type(s_wrong)
             if source_type == "AHU":
-                ahu_airloop = _resolve(model, s_wrong).to_AirLoopHVAC().get()
-                ok = rewire_mod.set_ahu_direct_service(model, ahu_airloop, target_zone)
-                reason = "reassigned the claimed zone to an AHU-direct pass-through terminal in place of " \
-                         "its true terminal" if ok else "attempted to reassign the claimed zone to an " \
-                         "AHU-direct connection, but the rewire call itself failed"
+                ahu_airloop = _resolve_airloop(model, s_wrong)
+                if ahu_airloop is None:
+                    reason = f"could not resolve AHU {s_wrong!r} -- this node was resolvable when generate_" \
+                             "blueprint drew this event, so it was most likely destroyed as a side effect of " \
+                             "physically applying an EARLIER event in this same blueprint to this same scratch " \
+                             "model (a zone-service rewire that emptied this AHU's last zone deletes the whole " \
+                             "airloop, on single-zone-per-airloop buildings); not a bug in this event's own rewire"
+                else:
+                    ok = rewire_mod.set_ahu_direct_service(model, ahu_airloop, target_zone)
+                    reason = "reassigned the claimed zone to an AHU-direct pass-through terminal in place of " \
+                             "its true terminal" if ok else "attempted to reassign the claimed zone to an " \
+                             "AHU-direct connection, but the rewire call itself failed"
             elif source_type not in ("VAV", "Terminal_Unit"):
                 reason = (f"misattributed source is {source_type!r} -- out of scope for the terminal<->zone "
                           f"and AHU<->zone rewiring this pipeline implements (e.g. a pump/coil edge)")

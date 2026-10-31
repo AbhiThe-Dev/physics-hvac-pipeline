@@ -8,14 +8,19 @@ this pipeline does not modify `hvac_benchmark`'s code, only imports and
 calls it as a library.
 
 **Status: foundation proven end-to-end, using the existing benchmark's
-current placeholder noise rates (0/5/15%). All three real corruption edge
-types are covered on 4 test buildings now (widened from the original 2):
-terminal-unit<->zone, AHU<->zone-direct, and pump<->coil. Widening added
-genuinely new plant/coil topologies (single-medium and zero-plant-loop
-buildings), not just more seeds on the same two buildings -- see "Key
-findings" below for what did and didn't generalize. Real noise-rate
-calibration from physics and scaling up batch size further are the
-deliberately separate, later steps, not attempted here.**
+current placeholder noise rates (0/5/15%). All 10 ASHRAE 90.1 Appendix G
+baseline system archetypes are now covered** (widened progressively: 2 ->
+4 -> 10), spanning three fundamentally different HVAC architectures: one
+shared central AHU serving multiple zones (`sys05`-`08`), zone-level
+packaged terminal equipment with no `AirLoopHVAC` at all (`sys01`/`sys02`),
+and dedicated single-zone `AirLoopHVAC`s, one per zone (`sys03`/`sys04`/
+`sys09`/`sys10`). **Validation depth differs by architecture, and that
+difference is stated explicitly rather than folded into one "validated"
+claim** -- see "Key findings" below for exactly what generalized cleanly,
+what needed genuinely new `rewire.py` mechanisms, and the real bugs
+(including one segfault) found along the way. Real noise-rate calibration
+from physics and scaling up batch size further remain the deliberately
+separate, later steps, not attempted here.
 
 ## What this is not (yet)
 
@@ -26,15 +31,16 @@ deliberately separate, later steps, not attempted here.**
   "License finding" below.
 - Not a noise-rate calibration effort. The troubleshooting trials below
   reuse `hvac_benchmark`'s existing 0%/5%/15% placeholder rates verbatim.
-- Not a large batch. Confirmed minimal scope: 4 topologies x 1 climate
+- Not a large batch. Confirmed minimal scope: 10 topologies x 1 climate
   zone, 3 corruption severities x 2 seeded variants each.
-- Not extended to zone-level packaged equipment (PTAC/PTHP, `sys01`/`sys02`)
-  or single-zone constant-volume systems with non-VAV terminals (`sys03`/
-  `sys04`/`sys09`/`sys10`). Both need real `extract.py` changes -- the
-  former has no `AirLoopHVAC` at all (all-zone-level equipment), the latter
-  uses `AirTerminal:SingleDuct:Uncontrolled` terminals this pipeline's
-  terminal-unit rewiring doesn't target. Deliberately scoped out of this
-  widening round; tracked as an open item in `CHANGELOG.md`.
+- Not extended to central-plant equipment fault types (chiller/boiler/
+  tower-level faults) -- explicitly out of scope for the six-system
+  extension round, logged as its own backlog item rather than attempted.
+- Not extended to AHU<->Terminal_Unit rewiring, even though `sys03`/
+  `sys04`/`sys09`/`sys10` (ten independent AHUs each, one per zone) make
+  this a genuinely meaningful gap on those four buildings now, not the
+  vacuous exclusion it was on every single-AHU building -- see the
+  Coverage progression section of `results.md`.
 
 ## Setup
 
@@ -54,7 +60,7 @@ only, not the simulation engine itself. Base building models come from
 
 ```
 src/physics_pipeline/
-  buildings.py    Registry of the 4 base buildings + climate/EnergyPlus paths
+  buildings.py    Registry of the 10 base buildings + climate/EnergyPlus paths
   extract.py      OpenStudio model -> hvac_benchmark TopologyGraph (real Brick classes, geometry-derived location)
   rewire.py       Physical model-rewiring primitives (terminal<->zone, AHU<->zone-direct, pump<->coil)
   scope.py        Filters generate_blueprint's output to edge types rewire.py actually supports
@@ -231,3 +237,39 @@ code, not something introduced here.
   bit-for-bit identical, confirming the widening didn't perturb them) +
   693 (the two new buildings, each numerically matching its structural
   analog's blueprint-survival count: sys05~sys07, sys06~sys08).
+- **Six-system extension (sys01/02/03/04/09/10): validation depth differs
+  by architecture, stated explicitly rather than folded into one uniform
+  claim.** `sys02_pthp` needed zero new code beyond `sys01` (same object
+  family, every mechanism generalized directly; its zero-coil-target-
+  events/flat-0%-collision status was independently re-derived, not
+  assumed). `sys01_ptac` needed a third new rewire.py subsystem (zone-level
+  packaged-unit equipment has no `AirLoopHVAC` at all), but its lifetime
+  semantics turned out *simpler* than the original VAV-terminal case:
+  `.remove()` cleanly cascade-deletes the whole assembly with no orphaning,
+  and `.clone()` already re-plumbs the embedded hydronic coil onto the
+  plant loop automatically. `sys03`/`sys04`/`sys09`/`sys10` (ten
+  independent single-zone AirLoopHVACs each, not one shared central AHU)
+  needed the most extensive new work and surfaced four real bugs, all
+  found by actually simulating rewired models, not by forward translation
+  (which stayed silent every time): (1) a dedicated airloop left with zero
+  zones after a branch removal is invalid EnergyPlus input and must be
+  deleted outright, not just the branch; (2) its
+  `SetpointManager:SingleZone:*` must be *retargeted*, not deleted, when
+  the airloop survives with a different zone (deleting it broke a
+  *different* setpoint manager that referenced it); (3) a genuine,
+  previously-latent bug in `set_ahu_direct_service` -- `addBranchForZone`
+  silently auto-moves a zone's connection away from wherever it truly was,
+  never observable on `sys05`-`08` (only one AHU total there) -- needed the
+  same retarget fix a second time, for a code path outside
+  `_remove_branch_safely`; (4) a real segfault (confirmed via process exit
+  code 139) from an aliasing case where `reassign_terminal`/
+  `add_extra_service` assumed two airloop references were always different
+  objects, fixed with a handle-equality guard. Two further collision
+  categories (an AHU deleted by an earlier event in the same blueprint; a
+  donor zone's terminal already gone) were left gracefully handled but not
+  structurally filtered, matching the sys05 DX-coil precedent -- one of
+  these was drawn by this batch's own actual seeds (`sys10`, severity 2),
+  the first time `n_failed > 0` in an actually-shipped production batch
+  rather than only an exploratory sweep. Full denominator across all 10
+  systems: 86 attempted, 83 clean, 2 dead, 1 failed (`83+2+1==86`), 3087
+  total troubleshooting trials.

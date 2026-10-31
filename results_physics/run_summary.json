@@ -64,6 +64,93 @@
       },
       "n_blueprints": 5,
       "n_trials": 315
+    },
+    {
+      "building_id": "sys01_ptac",
+      "n_nodes": 51,
+      "n_feeds_edges": 20,
+      "node_type_counts": {
+        "HVAC_Zone": 10,
+        "Terminal_Unit": 10,
+        "Cooling_Coil": 10,
+        "Heating_Coil": 10,
+        "Fan": 10,
+        "Pump": 1
+      },
+      "n_blueprints": 6,
+      "n_trials": 378
+    },
+    {
+      "building_id": "sys02_pthp",
+      "n_nodes": 50,
+      "n_feeds_edges": 10,
+      "node_type_counts": {
+        "HVAC_Zone": 10,
+        "Terminal_Unit": 10,
+        "Cooling_Coil": 10,
+        "Heating_Coil": 10,
+        "Fan": 10
+      },
+      "n_blueprints": 6,
+      "n_trials": 378
+    },
+    {
+      "building_id": "sys03_psz_ac",
+      "n_nodes": 60,
+      "n_feeds_edges": 20,
+      "node_type_counts": {
+        "AHU": 10,
+        "Cooling_Coil": 10,
+        "Heating_Coil": 10,
+        "Fan": 10,
+        "Terminal_Unit": 10,
+        "HVAC_Zone": 10
+      },
+      "n_blueprints": 4,
+      "n_trials": 252
+    },
+    {
+      "building_id": "sys04_psz_hp",
+      "n_nodes": 70,
+      "n_feeds_edges": 20,
+      "node_type_counts": {
+        "AHU": 10,
+        "Cooling_Coil": 10,
+        "Heating_Coil": 20,
+        "Fan": 10,
+        "Terminal_Unit": 10,
+        "HVAC_Zone": 10
+      },
+      "n_blueprints": 4,
+      "n_trials": 252
+    },
+    {
+      "building_id": "sys09_furnace_gas",
+      "n_nodes": 50,
+      "n_feeds_edges": 20,
+      "node_type_counts": {
+        "AHU": 10,
+        "Heating_Coil": 10,
+        "Fan": 10,
+        "Terminal_Unit": 10,
+        "HVAC_Zone": 10
+      },
+      "n_blueprints": 3,
+      "n_trials": 189
+    },
+    {
+      "building_id": "sys10_furnace_electric",
+      "n_nodes": 50,
+      "n_feeds_edges": 20,
+      "node_type_counts": {
+        "AHU": 10,
+        "Heating_Coil": 10,
+        "Fan": 10,
+        "Terminal_Unit": 10,
+        "HVAC_Zone": 10
+      },
+      "n_blueprints": 4,
+      "n_trials": 252
     }
   ]
 }
